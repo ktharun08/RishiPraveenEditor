@@ -1040,19 +1040,24 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
 .logo-drag-img{position:absolute;cursor:move;opacity:.92;user-select:none;touch-action:none;}
 .logo-pos-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-family:'JetBrains Mono',monospace;background:rgba(71,255,176,.1);border:1px solid rgba(71,255,176,.3);border-radius:4px;padding:3px 8px;color:var(--success);}
 @media(max-width:768px){
-  /* Header: un-anchor the centred logo so it flows inline on narrow screens */
+  /* Un-anchor the absolutely-centred logo so it participates in normal flow */
   .av-wrap{position:relative;left:auto;transform:none;flex:1;justify-content:center;}
   .sess-info{display:none;}
 }
 @media(max-width:600px){
-  /* ── Header ── */
-  .header{padding:10px 14px;gap:8px;}
-  .logo{font-size:17px;}
-  .badge{font-size:9px;padding:2px 5px;}
-  .av-logo{height:30px;}
-  #theme-toggle{width:28px;height:28px;}
-  /* ── Tab bar: adjust sticky top to match smaller header ── */
-  .tabs{top:54px;}
+  /* ── Header: two-row layout so nothing overlaps ── */
+  .header{flex-wrap:wrap;padding:8px 14px;gap:4px 8px;align-items:center;}
+  /* Row 1: logo · badge · [spacer] · gurudev btn · theme toggle */
+  .logo{order:1;font-size:17px;flex-shrink:0;}
+  .badge{order:2;font-size:9px;padding:2px 5px;flex-shrink:0;}
+  .sess-info{display:none;order:3;}
+  #gd-mob-btn{order:4;margin-left:auto;flex-shrink:0;}
+  #theme-toggle{order:5;width:28px;height:28px;flex-shrink:0;}
+  /* Row 2: ArhamVijja logo, full width, centred */
+  .av-wrap{order:10;width:100%;flex:none;justify-content:center;padding:2px 0 4px;}
+  .av-logo{height:28px;}
+  /* ── Tab bar: sticky top accounts for taller two-row header (~80px) ── */
+  .tabs{top:80px;}
   .tabs .tab{font-size:12px;padding:10px 4px;min-width:54px;}
   /* ── Panels & cards ── */
   .panel{padding:12px;}
@@ -1092,8 +1097,9 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
   .logo{font-size:14px;}
   .badge{display:none;}
   .ti{width:62px;}
+  .tabs{top:76px;}
   .tabs .tab{font-size:11px;min-width:46px;padding:9px 3px;}
-  .av-logo{height:26px;}
+  .av-logo{height:24px;}
 }
 /* ── Gurudev mobile header button ── */
 #gd-mob-btn{display:none;width:34px;height:34px;border-radius:50%;overflow:hidden;border:2px solid var(--border);padding:0;background:none;cursor:pointer;flex-shrink:0;transition:border-color .2s,box-shadow .2s;}
