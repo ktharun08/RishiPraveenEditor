@@ -6,4 +6,4 @@ COPY Gurudev_Ashirwaad.mp4 .
 COPY gurudev_photo.jpg .
 COPY arhamvijja_logo.png .
 EXPOSE 7892
-CMD ["python", "RishiPraveen_Editor_Web.py"]
+CMD ["python", "RishiPraveen_Editor_Web_v2.py"]
