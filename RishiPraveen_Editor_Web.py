@@ -1073,6 +1073,11 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
   .tabs .tab{font-size:11px;min-width:46px;padding:9px 3px;}
   .av-logo{height:26px;}
 }
+/* ── Gurudev mobile header button ── */
+#gd-mob-btn{display:none;width:34px;height:34px;border-radius:50%;overflow:hidden;border:2px solid var(--border);padding:0;background:none;cursor:pointer;flex-shrink:0;transition:border-color .2s,box-shadow .2s;}
+#gd-mob-btn img{width:100%;height:100%;object-fit:cover;display:block;}
+#gd-mob-btn:hover{border-color:rgba(245,166,35,.7);box-shadow:0 0 8px rgba(245,166,35,.35);}
+@media(max-width:960px){#gd-mob-btn{display:block;}}
 </style>
 </head>
 <body>
@@ -1101,6 +1106,9 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
     </a>
   </div>
   <div class="sess-info" id="sess-info">Starting&#8230;</div>
+  <button id="gd-mob-btn" onclick="openGdModal()" title="Gurudev Rishi Praveen — tap to watch Ashirwaad">
+    <img src="/static/gurudev_photo.jpg" alt="Gurudev">
+  </button>
   <button id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
     <svg id="theme-icon" width="15" height="15" viewBox="0 0 18 18" fill="none">
       <circle cx="9" cy="9" r="3.5" stroke="currentColor" stroke-width="1.4"/>
