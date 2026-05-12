@@ -511,6 +511,27 @@ def op_convert(s, step, jid):
     return out_name, None
 
 
+def op_compress(s, step, jid):
+    inp = step.get('input', '')
+    src = s['files'].get(inp)
+    if not src:
+        return None, f"File not found: {inp}"
+    crf = int(step.get('crf', 23))
+    if crf not in (18, 23, 28):
+        crf = 23
+    base, _ = os.path.splitext(inp)
+    out_name, out_path = _unique_out(s, f"{base}_compressed.mp4")
+    args = ['-y', '-i', src,
+            '-c:v', 'libx264', '-crf', str(crf), '-preset', 'slow',
+            '-c:a', 'copy', '-movflags', '+faststart', out_path]
+    rc, _ = ff_run(args, jid)
+    if rc != 0 or not os.path.exists(out_path):
+        return None, f"Compression failed (exit {rc})"
+    with _L:
+        s['files'][out_name] = out_path
+    return out_name, None
+
+
 def run_pipeline(jid, sid, steps):
     s = get_session(sid)
     if not s:
@@ -524,6 +545,7 @@ def run_pipeline(jid, sid, steps):
         'merge':           op_merge,
         'audio_cut_multi': op_audio_cut_multi,
         'convert':         op_convert,
+        'compress':        op_compress,
     }
     n = len(steps)
     prev_output = None  # auto-chain: output of step N feeds into step N+1
@@ -1125,6 +1147,7 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
   <button class="tab" data-tab="logo"      onclick="showTab('logo')">&#127991;&#65039; Logo</button>
   <button class="tab" data-tab="audio"     onclick="showTab('audio')">&#127925; Audio</button>
   <button class="tab" data-tab="mp3"       onclick="showTab('mp3')">&#128260; MP3</button>
+  <button class="tab" data-tab="compress"  onclick="showTab('compress')">&#128065; Compress</button>
   <button class="tab" data-tab="pipeline"  onclick="showTab('pipeline')" style="color:var(--accent);">&#9654; Pipeline</button>
 </div>
 
@@ -1318,6 +1341,52 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
   </div>
 </div>
 
+<!-- COMPRESS PANEL -->
+<div id="p-compress" class="panel">
+  <div class="card" style="border-color:rgba(71,179,255,.2);">
+    <div class="card-head">
+      <div class="card-icon" style="background:var(--blue);color:#000;">&#128065;</div>
+      <div><div class="card-title">Video Compressor</div>
+      <div class="card-sub">Reduce file size &mdash; audio copied as-is, zero audio quality loss</div></div>
+    </div>
+    <div class="card-body">
+      <div class="hint">Video is re-encoded with CRF (quality-based compression). Audio stream is copied untouched. Choose a level &mdash; lower CRF = larger file but better picture quality.</div>
+      <div class="field">
+        <label>Video File</label>
+        <select id="compress-file"><option value="">&#8212; select video &#8212;</option></select>
+      </div>
+      <div class="field">
+        <label>Compression Level</label>
+        <div class="mode-row">
+          <label class="mode-opt">
+            <input type="radio" name="compress-crf" value="18" style="accent-color:var(--blue);">
+            <div><div class="mode-title" style="color:var(--blue);">&#127775; Light &mdash; CRF 18</div>
+            <div class="mode-desc">Near-lossless &mdash; ~20% smaller, best picture</div></div>
+          </label>
+          <label class="mode-opt">
+            <input type="radio" name="compress-crf" value="23" checked style="accent-color:var(--accent);">
+            <div><div class="mode-title" style="color:var(--accent);">&#9881;&#65039; Balanced &mdash; CRF 23</div>
+            <div class="mode-desc">Recommended &mdash; ~40% smaller, imperceptible loss</div></div>
+          </label>
+          <label class="mode-opt">
+            <input type="radio" name="compress-crf" value="28" style="accent-color:var(--success);">
+            <div><div class="mode-title" style="color:var(--success);">&#128190; Strong &mdash; CRF 28</div>
+            <div class="mode-desc">Most compact &mdash; ~60% smaller, minor softening</div></div>
+          </label>
+        </div>
+      </div>
+      <div id="compress-err" class="err-box"></div>
+      <button class="btn btn-full" style="background:var(--blue);color:#000;" onclick="runCompress()" id="compress-btn">&#128065; Compress &amp; Download</button>
+      <div class="prog-wrap" id="compress-prog">
+        <div class="prog-bg"><div class="prog-fill" id="compress-fill" style="width:0%;background:var(--blue)"></div></div>
+        <div class="prog-text" id="compress-prog-text">Processing&#8230;</div>
+        <div class="log-box" id="compress-log"></div>
+      </div>
+      <div class="done-banner" id="compress-done" style="border-color:rgba(71,179,255,.3);background:rgba(71,179,255,.06);"></div>
+    </div>
+  </div>
+</div>
+
 <!-- PIPELINE PANEL -->
 <div id="p-pipeline" class="panel">
   <div style="background:rgba(232,255,71,.06);border:1px solid rgba(232,255,71,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--muted);line-height:1.7;">
@@ -1331,6 +1400,7 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
     <button class="pip-addbtn" onclick="pipAdd('merge')">&#128279; Merge</button>
     <button class="pip-addbtn" onclick="pipAdd('audio_cut_multi')">&#127925; Audio Cut</button>
     <button class="pip-addbtn" onclick="pipAdd('convert')">&#128260; To MP3</button>
+    <button class="pip-addbtn" onclick="pipAdd('compress')">&#128065; Compress</button>
   </div>
   <div id="pip-steps"></div>
   <div id="pip-err" class="err-box" style="margin-bottom:12px;"></div>
@@ -1514,6 +1584,7 @@ function refreshFileSelects(){
   setOpts('logo-img', imgs, '<option value="">&#8212; select image &#8212;</option>');
   setOpts('audio-file', auds, '<option value="">&#8212; select audio &#8212;</option>');
   setOpts('mp3-file', vids);
+  setOpts('compress-file', vids);
   renderMergeRows();
 }
 
@@ -1787,6 +1858,15 @@ async function runMp3(){
   await runSteps('mp3',[{op:'convert',input:inp,quality:quality}]);
 }
 
+// Compress
+async function runCompress(){
+  var inp=document.getElementById('compress-file').value;
+  if(!inp){showErr('compress','Please select a video file first.');return;}
+  var crf=parseInt(document.querySelector('[name="compress-crf"]:checked').value);
+  clearResult('compress');
+  await runSteps('compress',[{op:'compress',input:inp,crf:crf}]);
+}
+
 // Job runner
 async function runSteps(section,steps){
   setRunning(section,true); showProg(section,true); setProgText(section,'Starting&#8230;'); clearLog(section);
@@ -1877,7 +1957,8 @@ var _pipCutRanges  = {};  // stepId -> [{start,end}]
 var _pipLogoWins   = {};  // stepId -> [{t_start,t_end}]
 
 var PIP_LABELS = {cut_multi:'&#9986;&#65039; Cut Video', logo_multi:'&#127991;&#65039; Logo Burn',
-  merge:'&#128279; Merge', audio_cut_multi:'&#127925; Audio Cut', convert:'&#128260; To MP3'};
+  merge:'&#128279; Merge', audio_cut_multi:'&#127925; Audio Cut', convert:'&#128260; To MP3',
+  compress:'&#128065; Compress'};
 
 function pipAdd(op){
   var id = ++_pipId;
@@ -1892,6 +1973,7 @@ function pipAdd(op){
   else if(op==='merge'){   step.inputs=isFirst?(vids.length>=2?vids.slice(0,2):['','']):['__prev__',vids[1]||'']; step.ref_idx=-1; }
   else if(op==='audio_cut_multi'){ step.input=isFirst?(auds[0]||''):'__prev__'; step.mode='accurate'; }
   else if(op==='convert'){ step.input=isFirst?(vids[0]||''):'__prev__'; step.quality='192k'; }
+  else if(op==='compress'){ step.input=isFirst?(vids[0]||''):'__prev__'; step.crf=23; }
   PIPELINE.push(step); renderPipelineSteps();
   showTab('pipeline');
 }
@@ -2017,6 +2099,13 @@ function renderPipelineSteps(){
         '<option value="128k"'+(step.quality==='128k'?' selected':'')+'>128 kbps</option>'+
         '<option value="192k"'+(step.quality==='192k'?' selected':'')+'>192 kbps (recommended)</option>'+
         '<option value="320k"'+(step.quality==='320k'?' selected':'')+'>320 kbps</option></select></div>';
+    } else if(step.op==='compress'){
+      body=pipInputField(step,idx)+
+        '<div class="field"><label>Compression Level</label><select onchange="pipSet('+id+',\'crf\',parseInt(this.value))">'+
+        '<option value="18"'+(step.crf===18?' selected':'')+'>&#127775; Light (CRF 18) &mdash; ~20% smaller</option>'+
+        '<option value="23"'+(step.crf===23?' selected':'')+'>&#9881;&#65039; Balanced (CRF 23) &mdash; ~40% smaller</option>'+
+        '<option value="28"'+(step.crf===28?' selected':'')+'>&#128190; Strong (CRF 28) &mdash; ~60% smaller</option>'+
+        '</select></div>';
     }
 
     return '<div class="pip-card">'+
