@@ -6,6 +6,12 @@ Works on mobile, Mac, Windows. Deploy to Render.com free tier.
 """
 import os, sys, json, threading, uuid, time, shutil, subprocess, tempfile, re
 from http.server import HTTPServer, BaseHTTPRequestHandler
+try:
+    from http.server import ThreadingHTTPServer
+except ImportError:
+    from socketserver import ThreadingMixIn
+    class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
 from urllib.parse import urlparse
 
 PORT     = int(os.environ.get('PORT', 7892))
@@ -90,6 +96,19 @@ def probe(path):
     except Exception:
         return {}
 
+def to_seconds(s):
+    if not s:
+        return 0.0
+    parts = str(s).strip().split(':')
+    try:
+        if len(parts) == 3:
+            return float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
+        elif len(parts) == 2:
+            return float(parts[0])*60 + float(parts[1])
+        return float(parts[0])
+    except (ValueError, IndexError):
+        return 0.0
+
 def ff_run(args, jid=None):
     proc = subprocess.Popen(
         [FFMPEG] + args,
@@ -152,16 +171,24 @@ def op_logo(s, step, jid):
         return None, f"Logo not found: {logo_inp}"
     corner   = step.get('corner', 'tr')
     size_pct = max(1, min(100, int(step.get('size_pct', 12))))
+    t_start  = to_seconds(step.get('t_start', 0))
+    t_end    = to_seconds(step.get('t_end', 0))
     pad = 20
-    corners  = {
-        'tl':     f"overlay={pad}:{pad}",
-        'tr':     f"overlay=W-w-{pad}:{pad}",
-        'bl':     f"overlay={pad}:H-h-{pad}",
-        'br':     f"overlay=W-w-{pad}:H-h-{pad}",
-        'center': "overlay=(W-w)/2:(H-h)/2",
+    positions = {
+        'tl':     f"{pad}:{pad}",
+        'tr':     f"W-w-{pad}:{pad}",
+        'bl':     f"{pad}:H-h-{pad}",
+        'br':     f"W-w-{pad}:H-h-{pad}",
+        'center': "(W-w)/2:(H-h)/2",
     }
-    overlay = corners.get(corner, corners['tr'])
-    vf      = f"[1:v]scale=iw*{size_pct}/100:-1[lg];[0:v][lg]{overlay}"
+    pos = positions.get(corner, positions['tr'])
+    if t_end > 0 and t_end > t_start:
+        enable = f":enable='between(t,{t_start},{t_end})'"
+    elif t_start > 0:
+        enable = f":enable='gte(t,{t_start})'"
+    else:
+        enable = ''
+    vf = f"[1:v]scale=iw*{size_pct}/100:-1[lg];[0:v][lg]overlay={pos}{enable}"
     base, _ = os.path.splitext(inp)
     out_name = f"{base}_logo.mp4"
     out_path = os.path.join(s['dir'], out_name)
@@ -459,6 +486,53 @@ class Handler(BaseHTTPRequestHandler):
             s = get_session(sid)
             self.send_json({'saved': saved, 'files': list(s['files'].keys())})
 
+        elif p == '/upload_chunk':
+            sid    = self.headers.get('X-Session-Id', '')
+            uid    = self.headers.get('X-Upload-Id', '')
+            idx    = int(self.headers.get('X-Chunk-Index', '0') or 0)
+            length = int(self.headers.get('Content-Length', 0))
+            s = get_session(sid)
+            if not s or not uid or length == 0:
+                self.send_json({'error': 'Bad request'}, 400)
+                return
+            data = self.rfile.read(length)
+            chunk_dir = os.path.join(s['dir'], '.chunks', uid)
+            os.makedirs(chunk_dir, exist_ok=True)
+            with open(os.path.join(chunk_dir, f'{idx:06d}'), 'wb') as f:
+                f.write(data)
+            self.send_json({'ok': True})
+
+        elif p == '/upload_done':
+            body         = json.loads(self.rfile.read(length))
+            sid          = body.get('session_id', '')
+            uid          = body.get('upload_id', '')
+            orig_name    = body.get('filename', 'file')
+            total_chunks = int(body.get('total_chunks', 1))
+            s = get_session(sid)
+            if not s:
+                self.send_json({'error': 'Invalid or expired session'}, 400)
+                return
+            safe = re.sub(r'[^\w.\-]', '_', os.path.basename(orig_name)) or 'file'
+            final_path = os.path.join(s['dir'], safe)
+            if os.path.exists(final_path):
+                base, ext = os.path.splitext(safe)
+                safe = f"{base}_{uuid.uuid4().hex[:4]}{ext}"
+                final_path = os.path.join(s['dir'], safe)
+            chunk_dir = os.path.join(s['dir'], '.chunks', uid)
+            try:
+                with open(final_path, 'wb') as out:
+                    for ci in range(total_chunks):
+                        cp = os.path.join(chunk_dir, f'{ci:06d}')
+                        with open(cp, 'rb') as f:
+                            shutil.copyfileobj(f, out)
+                shutil.rmtree(chunk_dir, ignore_errors=True)
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
+                return
+            with _L:
+                s['files'][safe] = final_path
+            self.send_json({'saved': safe, 'files': list(s['files'].keys())})
+
         elif p == '/probe':
             body  = json.loads(self.rfile.read(length))
             sid   = body.get('session_id', '')
@@ -591,7 +665,10 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
 .dl-btn:last-child{margin-bottom:0;}
 .dl-icon{font-size:18px;}
 .error-banner{background:rgba(255,71,71,.1);border:1px solid var(--danger);border-radius:8px;padding:12px 16px;color:var(--danger);font-size:13px;font-family:'JetBrains Mono',monospace;margin-top:12px;}
-.up-item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--muted);}
+.up-item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;flex-direction:column;gap:6px;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--muted);}
+.up-item-row{display:flex;align-items:center;justify-content:space-between;}
+.up-prog-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+.up-prog-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .2s;}
 .up-spinner{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 @media(max-width:480px){
@@ -697,34 +774,66 @@ document.getElementById('file-inp').addEventListener('change', function(e){
   e.target.value = '';
 });
 
+function uid4() {
+  return 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.replace(/x/g, function(){
+    return (Math.random()*16|0).toString(16);
+  });
+}
+
 async function uploadFiles(files) {
-  for (var i=0; i<files.length; i++) {
-    await uploadOne(files[i]);
-  }
+  for (var i=0; i<files.length; i++) { await uploadOne(files[i]); }
 }
 
 async function uploadOne(file) {
-  var itemId = 'up-'+Date.now();
+  var CHUNK = 4 * 1024 * 1024; // 4 MB per chunk
+  var totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+  var uploadId = uid4();
+
   var wrap = document.getElementById('upload-items');
   var el = document.createElement('div');
-  el.id = itemId;
   el.className = 'up-item';
-  el.innerHTML = '<span>'+escHtml(file.name)+'</span><div class="up-spinner"></div>';
+  el.innerHTML = '<div class="up-item-row"><span>'+escHtml(file.name)+'</span><span id="up-pct-'+uploadId+'">0%</span></div>'+
+                 '<div class="up-prog-track"><div class="up-prog-fill" id="up-bar-'+uploadId+'" style="width:0%"></div></div>';
   wrap.prepend(el);
+
+  function setPct(p) {
+    var pct = Math.round(p*100)+'%';
+    var bar = document.getElementById('up-bar-'+uploadId);
+    var txt = document.getElementById('up-pct-'+uploadId);
+    if(bar) bar.style.width = pct;
+    if(txt) txt.textContent = pct;
+  }
+
   try {
-    var fd = new FormData();
-    fd.append('session_id', SID);
-    fd.append('file', file, file.name);
-    var r = await fetch('/upload', {method:'POST', body:fd});
-    var d = await r.json();
+    for (var i=0; i<totalChunks; i++) {
+      var chunk = file.slice(i*CHUNK, (i+1)*CHUNK);
+      var r = await fetch('/upload_chunk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Session-Id': SID,
+          'X-Upload-Id': uploadId,
+          'X-Chunk-Index': String(i)
+        },
+        body: chunk
+      });
+      if (!r.ok) { var e=await r.json(); throw new Error(e.error||'Chunk failed'); }
+      setPct((i+1)/totalChunks);
+    }
+    var r2 = await fetch('/upload_done', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({session_id:SID, upload_id:uploadId, filename:file.name, total_chunks:totalChunks})
+    });
+    var d = await r2.json();
     if (d.error) throw new Error(d.error);
     FILES = d.files || FILES;
     renderFileList();
     setInfo(FILES.length+' file(s) in session');
     el.remove();
   } catch(err) {
-    el.querySelector('.up-spinner').outerHTML = '<span style="color:var(--danger)">Error: '+escHtml(err.message)+'</span>';
-    setTimeout(function(){ el.remove(); }, 4000);
+    el.innerHTML = '<div class="up-item-row"><span>'+escHtml(file.name)+'</span><span style="color:var(--danger)">'+escHtml(err.message)+'</span></div>';
+    setTimeout(function(){ el.remove(); }, 5000);
   }
 }
 
@@ -756,6 +865,7 @@ function addStep(op) {
     step.input = vids[0]||''; step.start='00:00:00'; step.end=''; step.mode='fast';
   } else if (op==='logo') {
     step.input = vids[0]||''; step.logo = imgs[0]||''; step.corner='tr'; step.size_pct=12;
+    step.t_start=''; step.t_end='';
   } else if (op==='merge') {
     step.inputs = vids.length>=2 ? vids.slice(0,2) : ['',''];
   } else if (op==='audio_cut') {
@@ -832,7 +942,9 @@ function renderPipeline() {
            '<div class="field"><label>Position</label><div class="corner-grid">'+
            corners.map(function(c){return '<button class="corner-btn'+(s.corner===c[0]?' active':'')+'" onclick="stepSet('+s.id+',\'corner\',\''+c[0]+'\');renderPipeline()">'+c[1]+'</button>';}).join('')+
            '</div></div>'+
-           '<div class="field"><label>Size %</label><input type="number" value="'+(s.size_pct||12)+'" min="1" max="100" oninput="stepSet('+s.id+',\'size_pct\',parseInt(this.value))"></div>';
+           '<div class="field"><label>Size %</label><input type="number" value="'+(s.size_pct||12)+'" min="1" max="100" oninput="stepSet('+s.id+',\'size_pct\',parseInt(this.value))"></div>'+
+           '<div class="field"><label>Logo show from</label><input type="text" value="'+escHtml(s.t_start||'')+'" placeholder="00:00:00 (leave empty = from start)" oninput="stepSet('+s.id+',\'t_start\',this.value)"></div>'+
+           '<div class="field"><label>Logo show until</label><input type="text" value="'+escHtml(s.t_end||'')+'" placeholder="00:00:00 (leave empty = till end)" oninput="stepSet('+s.id+',\'t_end\',this.value)"></div>';
     } else if (s.op==='merge') {
       var rows=(s.inputs||[]).map(function(inp,i){
         return '<div class="merge-row"><select onchange="mergeSet('+s.id+','+i+',this.value)"><option value="">— select video —</option>'+fileOpts(inp)+'</select>'+
@@ -899,7 +1011,7 @@ async function runPipeline() {
   var steps=PIPE.map(function(s){
     var step={op:s.op};
     if(s.op==='cut') Object.assign(step,{input:s.input,start:s.start,end:s.end,mode:s.mode});
-    else if(s.op==='logo') Object.assign(step,{input:s.input,logo:s.logo,corner:s.corner,size_pct:s.size_pct});
+    else if(s.op==='logo') Object.assign(step,{input:s.input,logo:s.logo,corner:s.corner,size_pct:s.size_pct,t_start:s.t_start||'',t_end:s.t_end||''});
     else if(s.op==='merge') step.inputs=(s.inputs||[]).filter(Boolean);
     else if(s.op==='audio_cut') Object.assign(step,{input:s.input,start:s.start,end:s.end,mode:s.mode});
     else if(s.op==='convert') Object.assign(step,{input:s.input,quality:s.quality});
@@ -986,7 +1098,7 @@ if __name__ == '__main__':
     print(f"  +--------------------------------------------------+")
     print(f"\n  Press Ctrl+C to stop.\n")
 
-    server = HTTPServer((HOST, PORT), Handler)
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
