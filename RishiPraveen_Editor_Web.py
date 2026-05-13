@@ -1058,7 +1058,7 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
   .av-logo{height:28px;}
   /* ── Tab bar: sticky top accounts for taller two-row header (~80px) ── */
   .tabs{top:80px;}
-  .tabs .tab{font-size:12px;padding:10px 4px;min-width:54px;}
+  .tabs .tab{flex:none;font-size:12px;padding:10px 14px;min-width:unset;}
   /* ── Panels & cards ── */
   .panel{padding:12px;}
   .card-body{padding:12px 14px;}
@@ -1098,7 +1098,7 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
   .badge{display:none;}
   .ti{width:62px;}
   .tabs{top:76px;}
-  .tabs .tab{font-size:11px;min-width:46px;padding:9px 3px;}
+  .tabs .tab{flex:none;font-size:11px;padding:9px 12px;min-width:unset;}
   .av-logo{height:24px;}
 }
 /* ── Gurudev mobile header button ── */
