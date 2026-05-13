@@ -1047,14 +1047,14 @@ body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-he
 @media(max-width:600px){
   /* ── Header: two-row layout so nothing overlaps ── */
   .header{flex-wrap:wrap;padding:8px 14px;gap:4px 8px;align-items:center;}
-  /* Row 1: logo · badge · [spacer] · gurudev btn · theme toggle */
-  .logo{order:1;font-size:17px;flex-shrink:0;}
-  .badge{order:2;font-size:9px;padding:2px 5px;flex-shrink:0;}
-  .sess-info{display:none;order:3;}
-  #gd-mob-btn{order:4;margin-left:auto;flex-shrink:0;}
-  #theme-toggle{order:5;width:28px;height:28px;flex-shrink:0;}
-  /* Row 2: ArhamVijja logo, full width, centred */
-  .av-wrap{order:10;width:100%;flex:none;justify-content:center;padding:2px 0 4px;}
+  /* Row 1: ArhamVijja logo, full width, centred */
+  .av-wrap{order:1;width:100%;flex:none;justify-content:center;padding:4px 0 2px;}
+  /* Row 2: logo · badge · [spacer] · gurudev btn · theme toggle */
+  .logo{order:11;font-size:17px;flex-shrink:0;}
+  .badge{order:12;font-size:9px;padding:2px 5px;flex-shrink:0;}
+  .sess-info{display:none;order:13;}
+  #gd-mob-btn{order:14;margin-left:auto;flex-shrink:0;}
+  #theme-toggle{order:15;width:28px;height:28px;flex-shrink:0;}
   .av-logo{height:28px;}
   /* ── Tab bar: sticky top accounts for taller two-row header (~80px) ── */
   .tabs{top:80px;}
